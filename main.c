@@ -3,15 +3,16 @@
 
 int main(int argc, char *argv[]) {
 
+    const int winWidth = 600;
+    const int winHeight = 600;
+
     SDL_Init(SDL_INIT_VIDEO);   
 
     SDL_Window* win;
 
     SDL_Renderer* renderer;
 
-    int pixel;
-
-    SDL_CreateWindowAndRenderer(600, 600, 0, &win, &renderer);
+    SDL_CreateWindowAndRenderer(winWidth, winHeight, 0, &win, &renderer);
 
     while (1) {
         SDL_Event winEvent;
@@ -27,22 +28,13 @@ int main(int argc, char *argv[]) {
 
         SDL_SetRenderDrawColor(renderer, 255, 255, 255, 255);
 
-        pixel = SDL_RenderDrawPoint(renderer, 300, 300);
-
-        if (pixel != 0) {
-            printf("%s", SDL_GetError());
-            return 1;
-        }
+        SDL_RenderDrawLine(renderer, winWidth / 2, winHeight / 2, winWidth, winHeight);
 
         SDL_RenderPresent(renderer);
     }
 
     SDL_DestroyWindow(win);
     SDL_Quit();
-
-    if (pixel == 0) {
-        printf("\nCOLD");
-    }
 
     return EXIT_SUCCESS;
 }
