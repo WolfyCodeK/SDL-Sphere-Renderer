@@ -13,6 +13,7 @@ int main(int argc, char *argv[]) {
     SDL_Renderer* renderer;
 
     SDL_CreateWindowAndRenderer(winWidth, winHeight, 0, &win, &renderer);
+    SDL_SetWindowTitle(win, "SDL PROJECT");
 
     while (1) {
         SDL_Event winEvent;
