@@ -11,6 +11,13 @@ struct vector {
   double z;
 };
 
+struct inputs {
+  int up;
+  int down;
+  int right;
+  int left;
+};
+
 double magnitude(struct vector v1) {
   return sqrt(v1.x * v1.x + v1.y * v1.y + v1.z * v1.z);
 }
@@ -81,33 +88,109 @@ int main(int argc, char *argv[]) {
     SDL_CreateWindowAndRenderer(winWidth, winHeight, 0, &win, &renderer);
     SDL_SetWindowTitle(win, "SDL PROJECT");
 
-    while (1) {
+    int renderLoopActive = 1;
+
+    struct inputs userInputs = {0, 0, 0, 0};
+
+    struct vector sphereColour = {230, 40, 150};
+
+    double radius = 75.0;
+
+    double ambientStrength = 0.2;
+
+    struct vector direction = {0, 0, -1};
+
+    struct vector centerSphere = {0, 0, 0};
+
+    struct vector light = {100, 100, 1000};
+
+    int time = 0;
+
+    while (renderLoopActive) {
+        Uint64 start = SDL_GetPerformanceCounter();
+
         SDL_Event winEvent;
 
-        if (SDL_PollEvent(&winEvent)) {
-            if (SDL_QUIT == winEvent.type) {
-                break;
+        while (SDL_PollEvent(&winEvent)) {
+          switch(winEvent.type) {
+            case SDL_QUIT: {
+              renderLoopActive = 0;
+              break;
             }
+
+            case SDL_KEYDOWN: {
+              switch (winEvent.key.keysym.scancode) {
+                case SDL_SCANCODE_W: {
+                  userInputs.up = 1;
+                  break;
+                }
+
+                case SDL_SCANCODE_D: {
+                  userInputs.right = 1;
+                  break;
+                }
+
+                case SDL_SCANCODE_S: {
+                  userInputs.down = 1;
+                  break;
+                }
+                
+                case SDL_SCANCODE_A: {
+                  userInputs.left = 1;
+                  break;
+                }
+
+                break;
+              }
+
+              break;
+            }
+
+            case SDL_KEYUP: {
+              switch (winEvent.key.keysym.scancode) {
+                case SDL_SCANCODE_W: {
+                  userInputs.up = 0;
+                  break;
+                }
+
+                case SDL_SCANCODE_D: {
+                  userInputs.right = 0;
+                  break;
+                }
+
+                case SDL_SCANCODE_S: {
+                  userInputs.down = 0;
+                  break;
+                }
+                
+                case SDL_SCANCODE_A: {
+                  userInputs.left = 0;
+                  break;
+                }
+                
+                break;
+              }
+
+              break;
+            }
+
+            break;
+          }
         }
 
         SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
 
         SDL_RenderClear(renderer);
 
-        struct vector sphereColour = {230, 40, 150};
+        int moveSpeed = 6;
 
-        double radius = 75.0;
+        centerSphere.x += (userInputs.right - userInputs.left) * moveSpeed;
+        centerSphere.y += (userInputs.down - userInputs.up) * moveSpeed;
 
-        double ambientStrength = 0.2;
+        int renderLoopAmount = 3;
 
-        struct vector direction = {0, 0, -1};
-
-        struct vector centerSphere = {0, 0, 0};
-
-        struct vector light = {100, 100, 1000};
-
-        for (int j = 0; j < winHeight; j++) {
-            for (int i = 0; i < winWidth; i++) {
+        for (int j = 0; j < winHeight; j += renderLoopAmount) {
+            for (int i = 0; i < winWidth; i += renderLoopAmount) {
               double v = -winHeight / 2 + j;
               double u = -winWidth / 2 + i;
 
@@ -123,8 +206,6 @@ int main(int argc, char *argv[]) {
 
               double intersection = (- b - sqrt(discriminant)) / 2 * a;
               struct vector points = add(origin, (mul(direction, intersection)));
-
-              //printf("%f %f %f\n", points.x, points.y, points.z);
 
               struct vector lightSource = sub(light, points);
               lightSource = normalise(lightSource);
@@ -152,16 +233,38 @@ int main(int argc, char *argv[]) {
                   255
                 ); 
 
-                //printf("%f\n", intersection);
               } else if (discriminant < 0) {
                 SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
               }
 
               SDL_RenderDrawPoint(renderer, i, j);
+
+              if ((i < winWidth - 1) && (j < winHeight - 1)) {
+                SDL_RenderDrawPoint(renderer, i + 1, j);
+                SDL_RenderDrawPoint(renderer, i, j + 1);
+                SDL_RenderDrawPoint(renderer, i + 1, j + 1);
+
+                SDL_RenderDrawPoint(renderer, i + 2, j);
+                SDL_RenderDrawPoint(renderer, i, j + 2);
+                SDL_RenderDrawPoint(renderer, i + 2, j + 2);
+
+                SDL_RenderDrawPoint(renderer, i + 2, j + 1);
+                SDL_RenderDrawPoint(renderer, i + 1, j + 2);  
+              }
             }
         }
 
-        SDL_RenderPresent(renderer);
+        Uint64 end = SDL_GetPerformanceCounter();
+        float elapsed = (end - start) / (float)SDL_GetPerformanceFrequency();
+
+        if (time > 10) {
+          printf("fps: %d\n", (int) round(1 / elapsed));
+          time = 0;
+        } else {
+          time++;
+        }
+
+        SDL_RenderPresent(renderer); 
     }
 
     SDL_DestroyWindow(win);
