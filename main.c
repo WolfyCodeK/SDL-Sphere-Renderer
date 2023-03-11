@@ -2,8 +2,8 @@
 #include<math.h>
 #include<SDL2/SDL.h>
 
-#define WIN_WIDTH 600
-#define WIN_HEIGHT 600
+#define WIN_WIDTH 240
+#define WIN_HEIGHT 160
 #define CAMERA_DISTANCE_SCALAR 1
 #define FOCAL_LENGTH (600 * CAMERA_DISTANCE_SCALAR)
 #define CONTROLLER_DEADZONE (SDL_MAX_SINT16 / 3)
@@ -103,7 +103,7 @@ int main(int argc, char *argv[]) {
 
     struct vector sphereColour = {230, 40, 150};
 
-    double radius = 75.0;
+    double radius = 50.0;
 
     double ambientStrength = 0.2;
 
@@ -113,7 +113,7 @@ int main(int argc, char *argv[]) {
 
     struct vector origin = {0, 0, 0};
 
-    struct vector VRP = {0, 0, FOCAL_LENGTH};
+    struct vector VRP = {0, 0, FOCAL_LENGTH * 2};
 
     struct vector VPN = {0, 0, -1};
 
@@ -178,6 +178,20 @@ int main(int argc, char *argv[]) {
                   lookInputs.left = 1;
                 } else {
                   lookInputs.left = 0;
+                }
+              }
+
+              if (event.caxis.axis == SDL_CONTROLLER_AXIS_RIGHTY) {
+                if (axisValue > CONTROLLER_DEADZONE) {
+                  lookInputs.up = 1;
+                } else {
+                  lookInputs.up = 0;
+                }
+                
+                if (axisValue < -CONTROLLER_DEADZONE) {
+                  lookInputs.down = 1;
+                } else {
+                  lookInputs.down = 0;
                 }
               }
             }
@@ -251,6 +265,15 @@ int main(int argc, char *argv[]) {
         int renderLoopAmount = 3;
 
         yaw += (lookInputs.right - lookInputs.left) * 3;
+        pitch += (lookInputs.up - lookInputs.down) * 3;
+
+        if(pitch > 89.0f) {
+          pitch =  89.0f;
+        }
+
+        if(pitch < -89.0f) {
+          pitch = -89.0f;
+        }
 
         VPN.x = cos(yaw * (M_PI / 180)) * cos(pitch * (M_PI / 180));
         VPN.y = sin(pitch * (M_PI / 180));
@@ -272,10 +295,8 @@ int main(int argc, char *argv[]) {
         VRP.x += (move.x * VRV.x) + (move.z * VPN.x);
         VRP.z += (move.x * VRV.z) + (move.z * VPN.z);
 
-        printf("Yaw: %f\n", yaw);
-        printf("VRP: %f %f %f\n", VRP.x, VRP.y, VRP.z);
-        printf("VRV: %f %f %f\n", VRV.x, VRV.y, VRV.z);
-        printf("VPN: %f %f %f\n", VPN.x, VPN.y, VPN.z);
+        //printf("VPN: %f", VPN.z);
+        //printf("         VPN + VUV: %f\n", VPN.z + VUV.z);
 
         for (int j = 0; j < WIN_HEIGHT; j += renderLoopAmount) {
             for (int i = 0; i < WIN_WIDTH; i += renderLoopAmount) {
@@ -296,14 +317,9 @@ int main(int argc, char *argv[]) {
               double intersection = (- b - sqrt(discriminant)) / 2 * a;
               struct vector points = add(VRP, (mul(direction, intersection)));
 
-/*
-              if ((v == 0) && (u ==0)) {
-                printf("a: %lf \n", a);
-                printf("direction: %f %f %f\n", direction.x, direction.y, direction.z);
-                printf("centerOfSphereToOrigin: %f %f %f\n", centerOfSphereToOrigin.x, centerOfSphereToOrigin.y, centerOfSphereToOrigin.z);
-                printf("points: %f %f %f\n", points.x, points.y, points.z);
-              }
-            */
+              // if ((v == 0) && (u ==0)) {
+              //   printf("intersection: %lf \n", intersection);
+              // }
 
               struct vector lightSource = sub(light, points);
               lightSource = normalise(lightSource);
@@ -314,24 +330,29 @@ int main(int argc, char *argv[]) {
               // Calculating the angle that the lights hits the surface of the sphere
               double cosTheta = dot(lightSource, surfaceNormal);
 
-              SDL_SetRenderDrawColor(
-                renderer,
-                (sphereColour.x * clampAsDouble(cosTheta + ambientStrength)),
-                (sphereColour.y * clampAsDouble(cosTheta + ambientStrength)),
-                (sphereColour.z * clampAsDouble(cosTheta + ambientStrength)), 
-                255
-              ); 
-
-              if ((cosTheta < 0) && (discriminant >= 0)) {
+              if (intersection >= 0) {
                 SDL_SetRenderDrawColor(
-                  renderer, 
-                  sphereColour.x * ambientStrength,
-                  sphereColour.y * ambientStrength, 
-                  sphereColour.z * ambientStrength, 
+                  renderer,
+                  (sphereColour.x * clampAsDouble(cosTheta + ambientStrength)),
+                  (sphereColour.y * clampAsDouble(cosTheta + ambientStrength)),
+                  (sphereColour.z * clampAsDouble(cosTheta + ambientStrength)), 
                   255
                 ); 
 
-              } else if (discriminant < 0) {
+                if ((cosTheta < 0) && (discriminant >= 0)) {
+                  SDL_SetRenderDrawColor(
+                    renderer, 
+                    sphereColour.x * ambientStrength,
+                    sphereColour.y * ambientStrength, 
+                    sphereColour.z * ambientStrength, 
+                    255
+                  ); 
+                } else if (discriminant < 0) {
+                  SDL_SetRenderDrawColor(renderer, 135, 207, 235, 255);
+                }
+              } else if ((intersection <= 0) && (intersection >= -radius)) {
+                SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
+              } else {
                 SDL_SetRenderDrawColor(renderer, 135, 207, 235, 255);
               }
 
@@ -350,16 +371,6 @@ int main(int argc, char *argv[]) {
                 SDL_RenderDrawPoint(renderer, i + 1, j + 2);  
               }     
             }
-        }
-
-        Uint64 end = SDL_GetPerformanceCounter();
-        float elapsed = (end - start) / (float)SDL_GetPerformanceFrequency();
-
-        if (time > 30) {
-          printf("fps: %d\n", (int) round(1 / elapsed));
-          time = 0;
-        } else {
-          time++;
         }
 
         SDL_SetRenderDrawColor(renderer, 255, 255, 255, 255);
@@ -384,6 +395,18 @@ int main(int argc, char *argv[]) {
         SDL_RenderDrawLine(renderer, WIN_WIDTH / 2 + 1, WIN_HEIGHT / 2 - crosshairSize,
           WIN_WIDTH / 2 + 1, WIN_HEIGHT / 2 + crosshairSize); 
 
+
+        Uint64 end = SDL_GetPerformanceCounter();
+        float elapsed = (end - start) / (float)SDL_GetPerformanceFrequency();
+
+        if (time > 30) {
+          printf("fps: %d\n", (int) round(1 / elapsed));
+          time = 0;
+        } else {
+          time++;
+        }
+
+        SDL_Delay(30);
 
         SDL_RenderPresent(renderer); 
     }
