@@ -2,8 +2,11 @@
 #include<math.h>
 #include<SDL2/SDL.h>
 
-#define winWidth 600
-#define winHeight 600
+#define WIN_WIDTH 600
+#define WIN_HEIGHT 600
+#define CAMERA_DISTANCE_SCALAR 1
+#define FOCAL_LENGTH (600 * CAMERA_DISTANCE_SCALAR)
+#define CONTROLLER_DEADZONE (SDL_MAX_SINT16 / 3)
 
 struct vector {
   double x;
@@ -79,18 +82,24 @@ double clampAsDouble(double n) {
 }
 
 int main(int argc, char *argv[]) {
-    SDL_Init(SDL_INIT_VIDEO);   
+    SDL_Init(SDL_INIT_VIDEO | SDL_INIT_GAMECONTROLLER);   
+
+    SDL_GameController* controller = SDL_GameControllerOpen(0);
+
+    printf("%s Connected!\n", SDL_GameControllerName(controller));
 
     SDL_Window* win;
 
     SDL_Renderer* renderer;
 
-    SDL_CreateWindowAndRenderer(winWidth, winHeight, 0, &win, &renderer);
+    SDL_CreateWindowAndRenderer(WIN_WIDTH, WIN_HEIGHT, 0, &win, &renderer);
     SDL_SetWindowTitle(win, "SDL PROJECT");
 
     int renderLoopActive = 1;
 
-    struct inputs userInputs = {0, 0, 0, 0};
+    struct inputs moveInputs = {0, 0, 0, 0};
+
+    struct inputs lookInputs = {0, 0, 0, 0};
 
     struct vector sphereColour = {230, 40, 150};
 
@@ -98,45 +107,100 @@ int main(int argc, char *argv[]) {
 
     double ambientStrength = 0.2;
 
-    struct vector direction = {0, 0, -1};
-
     struct vector centerSphere = {0, 0, 0};
 
     struct vector light = {100, 100, 1000};
 
+    struct vector origin = {0, 0, 0};
+
+    struct vector VRP = {0, 0, FOCAL_LENGTH};
+
+    struct vector VPN = {0, 0, -1};
+
+    float yaw = -90;
+    float pitch = 0;
+
     int time = 0;
+
+    struct vector upApproximation = {0, 1, 0};
 
     while (renderLoopActive) {
         Uint64 start = SDL_GetPerformanceCounter();
 
-        SDL_Event winEvent;
+        SDL_Event event;
 
-        while (SDL_PollEvent(&winEvent)) {
-          switch(winEvent.type) {
+        while (SDL_PollEvent(&event)) {
+          switch(event.type) {
             case SDL_QUIT: {
               renderLoopActive = 0;
               break;
             }
 
+            case SDL_CONTROLLERAXISMOTION: {
+              Sint16 axisValue = event.caxis.value;
+
+              if (event.caxis.axis == SDL_CONTROLLER_AXIS_LEFTX) {
+                if (axisValue > CONTROLLER_DEADZONE) {
+                  moveInputs.right = 1;
+                } else {
+                  moveInputs.right = 0;
+                }
+                
+                if (axisValue < -CONTROLLER_DEADZONE) {
+                  moveInputs.left = 1;
+                } else {
+                  moveInputs.left = 0;
+                }
+              }
+
+              if (event.caxis.axis == SDL_CONTROLLER_AXIS_LEFTY) {
+                if (axisValue > CONTROLLER_DEADZONE) {
+                  moveInputs.down = 1;
+                } else {
+                  moveInputs.down = 0;
+                }
+                
+                if (axisValue < -CONTROLLER_DEADZONE) {
+                  moveInputs.up = 1;
+                } else {
+                  moveInputs.up = 0;
+                }
+              }
+
+              if (event.caxis.axis == SDL_CONTROLLER_AXIS_RIGHTX) {
+                if (axisValue > CONTROLLER_DEADZONE) {
+                  lookInputs.right = 1;
+                } else {
+                  lookInputs.right = 0;
+                }
+                
+                if (axisValue < -CONTROLLER_DEADZONE) {
+                  lookInputs.left = 1;
+                } else {
+                  lookInputs.left = 0;
+                }
+              }
+            }
+
             case SDL_KEYDOWN: {
-              switch (winEvent.key.keysym.scancode) {
+              switch (event.key.keysym.scancode) {
                 case SDL_SCANCODE_W: {
-                  userInputs.up = 1;
+                  moveInputs.up = 1;
                   break;
                 }
 
                 case SDL_SCANCODE_D: {
-                  userInputs.right = 1;
+                  moveInputs.right = 1;
                   break;
                 }
 
                 case SDL_SCANCODE_S: {
-                  userInputs.down = 1;
+                  moveInputs.down = 1;
                   break;
                 }
                 
                 case SDL_SCANCODE_A: {
-                  userInputs.left = 1;
+                  moveInputs.left = 1;
                   break;
                 }
 
@@ -147,24 +211,24 @@ int main(int argc, char *argv[]) {
             }
 
             case SDL_KEYUP: {
-              switch (winEvent.key.keysym.scancode) {
+              switch (event.key.keysym.scancode) {
                 case SDL_SCANCODE_W: {
-                  userInputs.up = 0;
+                  moveInputs.up = 0;
                   break;
                 }
 
                 case SDL_SCANCODE_D: {
-                  userInputs.right = 0;
+                  moveInputs.right = 0;
                   break;
                 }
 
                 case SDL_SCANCODE_S: {
-                  userInputs.down = 0;
+                  moveInputs.down = 0;
                   break;
                 }
                 
                 case SDL_SCANCODE_A: {
-                  userInputs.left = 0;
+                  moveInputs.left = 0;
                   break;
                 }
                 
@@ -182,21 +246,46 @@ int main(int argc, char *argv[]) {
 
         SDL_RenderClear(renderer);
 
-        int moveSpeed = 6;
-
-        centerSphere.x += (userInputs.right - userInputs.left) * moveSpeed;
-        centerSphere.y += (userInputs.down - userInputs.up) * moveSpeed;
+        float moveSpeed = 6.0;
 
         int renderLoopAmount = 3;
 
-        for (int j = 0; j < winHeight; j += renderLoopAmount) {
-            for (int i = 0; i < winWidth; i += renderLoopAmount) {
-              double v = -winHeight / 2 + j;
-              double u = -winWidth / 2 + i;
+        yaw += (lookInputs.right - lookInputs.left) * 3;
 
-              struct vector origin = {u, v, 400};
+        VPN.x = cos(yaw * (M_PI / 180)) * cos(pitch * (M_PI / 180));
+        VPN.y = sin(pitch * (M_PI / 180));
+        VPN.z = sin(yaw * (M_PI / 180)) * cos(pitch * (M_PI / 180));
+        VPN = normalise(VPN);
 
-              struct vector centerOfSphereToOrigin = sub(origin, centerSphere);
+        struct vector VRV = cross(VPN, upApproximation);
+        VRV = normalise(VRV);
+
+        struct vector VUV = cross(VRV, VPN);
+        VUV = normalise(VUV);
+
+        struct vector move = {
+          (moveInputs.right - moveInputs.left) * moveSpeed,
+          0,
+          (moveInputs.up - moveInputs.down) * moveSpeed
+        };
+
+        VRP.x += (move.x * VRV.x) + (move.z * VPN.x);
+        VRP.z += (move.x * VRV.z) + (move.z * VPN.z);
+
+        printf("Yaw: %f\n", yaw);
+        printf("VRP: %f %f %f\n", VRP.x, VRP.y, VRP.z);
+        printf("VRV: %f %f %f\n", VRV.x, VRV.y, VRV.z);
+        printf("VPN: %f %f %f\n", VPN.x, VPN.y, VPN.z);
+
+        for (int j = 0; j < WIN_HEIGHT; j += renderLoopAmount) {
+            for (int i = 0; i < WIN_WIDTH; i += renderLoopAmount) {
+              double v = -WIN_HEIGHT / 2 + j;
+              double u = -WIN_WIDTH / 2 + i;
+
+              struct vector direction = add(mul(VPN, FOCAL_LENGTH), add(mul(VUV, v), mul(VRV, u)));
+              direction = normalise(direction);
+       
+              struct vector centerOfSphereToOrigin = sub(VRP, centerSphere);
 
               double a = dot(direction, direction);
               double b = 2 * dot(centerOfSphereToOrigin, direction);
@@ -205,7 +294,16 @@ int main(int argc, char *argv[]) {
               double discriminant = b * b - (4 * a * c);
 
               double intersection = (- b - sqrt(discriminant)) / 2 * a;
-              struct vector points = add(origin, (mul(direction, intersection)));
+              struct vector points = add(VRP, (mul(direction, intersection)));
+
+/*
+              if ((v == 0) && (u ==0)) {
+                printf("a: %lf \n", a);
+                printf("direction: %f %f %f\n", direction.x, direction.y, direction.z);
+                printf("centerOfSphereToOrigin: %f %f %f\n", centerOfSphereToOrigin.x, centerOfSphereToOrigin.y, centerOfSphereToOrigin.z);
+                printf("points: %f %f %f\n", points.x, points.y, points.z);
+              }
+            */
 
               struct vector lightSource = sub(light, points);
               lightSource = normalise(lightSource);
@@ -234,12 +332,12 @@ int main(int argc, char *argv[]) {
                 ); 
 
               } else if (discriminant < 0) {
-                SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
+                SDL_SetRenderDrawColor(renderer, 135, 207, 235, 255);
               }
 
               SDL_RenderDrawPoint(renderer, i, j);
 
-              if ((i < winWidth - 1) && (j < winHeight - 1)) {
+              if ((i < WIN_WIDTH - 1) && (j < WIN_HEIGHT - 1)) {
                 SDL_RenderDrawPoint(renderer, i + 1, j);
                 SDL_RenderDrawPoint(renderer, i, j + 1);
                 SDL_RenderDrawPoint(renderer, i + 1, j + 1);
@@ -250,21 +348,48 @@ int main(int argc, char *argv[]) {
 
                 SDL_RenderDrawPoint(renderer, i + 2, j + 1);
                 SDL_RenderDrawPoint(renderer, i + 1, j + 2);  
-              }
+              }     
             }
         }
 
         Uint64 end = SDL_GetPerformanceCounter();
         float elapsed = (end - start) / (float)SDL_GetPerformanceFrequency();
 
-        if (time > 10) {
+        if (time > 30) {
           printf("fps: %d\n", (int) round(1 / elapsed));
           time = 0;
         } else {
           time++;
         }
 
+        SDL_SetRenderDrawColor(renderer, 255, 255, 255, 255);
+
+        int crosshairSize = 10;
+
+        SDL_RenderDrawLine(renderer, WIN_WIDTH / 2 - crosshairSize, WIN_HEIGHT / 2,
+          WIN_WIDTH / 2 + crosshairSize, WIN_HEIGHT / 2);
+
+        SDL_RenderDrawLine(renderer, WIN_WIDTH / 2, WIN_HEIGHT / 2 - crosshairSize,
+          WIN_WIDTH / 2, WIN_HEIGHT / 2 + crosshairSize);
+
+        SDL_RenderDrawLine(renderer, WIN_WIDTH / 2 - crosshairSize, WIN_HEIGHT / 2 - 1,
+          WIN_WIDTH / 2 + crosshairSize, WIN_HEIGHT / 2 - 1);
+
+        SDL_RenderDrawLine(renderer, WIN_WIDTH / 2 - 1, WIN_HEIGHT / 2 - crosshairSize,
+          WIN_WIDTH / 2 - 1, WIN_HEIGHT / 2 + crosshairSize); 
+
+        SDL_RenderDrawLine(renderer, WIN_WIDTH / 2 - crosshairSize, WIN_HEIGHT / 2 + 1,
+          WIN_WIDTH / 2 + crosshairSize, WIN_HEIGHT / 2 + 1);
+
+        SDL_RenderDrawLine(renderer, WIN_WIDTH / 2 + 1, WIN_HEIGHT / 2 - crosshairSize,
+          WIN_WIDTH / 2 + 1, WIN_HEIGHT / 2 + crosshairSize); 
+
+
         SDL_RenderPresent(renderer); 
+    }
+
+    if (controller != NULL) {
+      SDL_GameControllerClose(controller);
     }
 
     SDL_DestroyWindow(win);
