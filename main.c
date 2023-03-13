@@ -2,11 +2,11 @@
 #include<math.h>
 #include<SDL2/SDL.h>
 
-#define WIN_WIDTH 240
-#define WIN_HEIGHT 160
+#define WIN_WIDTH 600
+#define WIN_HEIGHT 600
 #define CAMERA_DISTANCE_SCALAR 1
 #define FOCAL_LENGTH (600 * CAMERA_DISTANCE_SCALAR)
-#define CONTROLLER_DEADZONE (SDL_MAX_SINT16 / 3)
+#define CONTROLLER_DEADZONE (SDL_MAX_SINT16 / 2.5)
 
 struct vector {
   double x;
@@ -95,6 +95,9 @@ int main(int argc, char *argv[]) {
     SDL_CreateWindowAndRenderer(WIN_WIDTH, WIN_HEIGHT, 0, &win, &renderer);
     SDL_SetWindowTitle(win, "SDL PROJECT");
 
+    SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
+    SDL_RenderClear(renderer);
+
     int renderLoopActive = 1;
 
     struct inputs moveInputs = {0, 0, 0, 0};
@@ -103,26 +106,30 @@ int main(int argc, char *argv[]) {
 
     struct vector sphereColour = {230, 40, 150};
 
-    double radius = 50.0;
-
-    double ambientStrength = 0.2;
-
     struct vector centerSphere = {0, 0, 0};
 
     struct vector light = {100, 100, 1000};
 
     struct vector origin = {0, 0, 0};
 
-    struct vector VRP = {0, 0, FOCAL_LENGTH * 2};
+    struct vector upApproximation = {0, 1, 0};
+
+    struct vector VRP = {0, 0, FOCAL_LENGTH};
 
     struct vector VPN = {0, 0, -1};
+
+    struct vector VFV = VPN;
+
+    double radius = 75.0;
+
+    double ambientStrength = 0.2;
+
+    float moveSpeed = 6.0;
 
     float yaw = -90;
     float pitch = 0;
 
     int time = 0;
-
-    struct vector upApproximation = {0, 1, 0};
 
     while (renderLoopActive) {
         Uint64 start = SDL_GetPerformanceCounter();
@@ -169,13 +176,13 @@ int main(int argc, char *argv[]) {
 
               if (event.caxis.axis == SDL_CONTROLLER_AXIS_RIGHTX) {
                 if (axisValue > CONTROLLER_DEADZONE) {
-                  lookInputs.right = 1;
+                  lookInputs.right = axisValue  / SDL_MAX_SINT16;
                 } else {
                   lookInputs.right = 0;
                 }
                 
                 if (axisValue < -CONTROLLER_DEADZONE) {
-                  lookInputs.left = 1;
+                  lookInputs.left = axisValue  / SDL_MAX_SINT16;
                 } else {
                   lookInputs.left = 0;
                 }
@@ -183,13 +190,13 @@ int main(int argc, char *argv[]) {
 
               if (event.caxis.axis == SDL_CONTROLLER_AXIS_RIGHTY) {
                 if (axisValue > CONTROLLER_DEADZONE) {
-                  lookInputs.up = 1;
+                  lookInputs.up = axisValue  / SDL_MAX_SINT16;
                 } else {
                   lookInputs.up = 0;
                 }
                 
                 if (axisValue < -CONTROLLER_DEADZONE) {
-                  lookInputs.down = 1;
+                  lookInputs.down = axisValue  / SDL_MAX_SINT16;
                 } else {
                   lookInputs.down = 0;
                 }
@@ -215,6 +222,26 @@ int main(int argc, char *argv[]) {
                 
                 case SDL_SCANCODE_A: {
                   moveInputs.left = 1;
+                  break;
+                }
+
+                case SDL_SCANCODE_UP: {
+                  lookInputs.up = 1;
+                  break;
+                }
+
+                case SDL_SCANCODE_RIGHT: {
+                  lookInputs.right = 1;
+                  break;
+                }
+
+                case SDL_SCANCODE_DOWN: {
+                  lookInputs.down = 1;
+                  break;
+                }
+                
+                case SDL_SCANCODE_LEFT: {
+                  lookInputs.left = 1;
                   break;
                 }
 
@@ -245,6 +272,26 @@ int main(int argc, char *argv[]) {
                   moveInputs.left = 0;
                   break;
                 }
+
+                case SDL_SCANCODE_UP: {
+                  lookInputs.up = 0;
+                  break;
+                }
+
+                case SDL_SCANCODE_RIGHT: {
+                  lookInputs.right = 0;
+                  break;
+                }
+
+                case SDL_SCANCODE_DOWN: {
+                  lookInputs.down = 0;
+                  break;
+                }
+                
+                case SDL_SCANCODE_LEFT: {
+                  lookInputs.left = 0;
+                  break;
+                }
                 
                 break;
               }
@@ -256,16 +303,8 @@ int main(int argc, char *argv[]) {
           }
         }
 
-        SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
-
-        SDL_RenderClear(renderer);
-
-        float moveSpeed = 6.0;
-
-        int renderLoopAmount = 3;
-
-        yaw += (lookInputs.right - lookInputs.left) * 3;
-        pitch += (lookInputs.up - lookInputs.down) * 3;
+        yaw += ((lookInputs.right) - (lookInputs.left)) * 4;
+        pitch += ((lookInputs.down) - (lookInputs.up)) * 2;
 
         if(pitch > 89.0f) {
           pitch =  89.0f;
@@ -280,6 +319,11 @@ int main(int argc, char *argv[]) {
         VPN.z = sin(yaw * (M_PI / 180)) * cos(pitch * (M_PI / 180));
         VPN = normalise(VPN);
 
+        VFV.x = cos(yaw * (M_PI / 180));
+        VFV.y = 0;
+        VFV.z = sin(yaw * (M_PI / 180));
+        VFV = normalise(VFV); 
+
         struct vector VRV = cross(VPN, upApproximation);
         VRV = normalise(VRV);
 
@@ -292,11 +336,10 @@ int main(int argc, char *argv[]) {
           (moveInputs.up - moveInputs.down) * moveSpeed
         };
 
-        VRP.x += (move.x * VRV.x) + (move.z * VPN.x);
-        VRP.z += (move.x * VRV.z) + (move.z * VPN.z);
+        VRP.x += (move.x * VRV.x) + (move.z * VFV.x);
+        VRP.z += (move.x * VRV.z) + (move.z * VFV.z);
 
-        //printf("VPN: %f", VPN.z);
-        //printf("         VPN + VUV: %f\n", VPN.z + VUV.z);
+        int renderLoopAmount = 3;
 
         for (int j = 0; j < WIN_HEIGHT; j += renderLoopAmount) {
             for (int i = 0; i < WIN_WIDTH; i += renderLoopAmount) {
@@ -316,10 +359,6 @@ int main(int argc, char *argv[]) {
 
               double intersection = (- b - sqrt(discriminant)) / 2 * a;
               struct vector points = add(VRP, (mul(direction, intersection)));
-
-              // if ((v == 0) && (u ==0)) {
-              //   printf("intersection: %lf \n", intersection);
-              // }
 
               struct vector lightSource = sub(light, points);
               lightSource = normalise(lightSource);
@@ -375,7 +414,7 @@ int main(int argc, char *argv[]) {
 
         SDL_SetRenderDrawColor(renderer, 255, 255, 255, 255);
 
-        int crosshairSize = 10;
+        int crosshairSize = 8;
 
         SDL_RenderDrawLine(renderer, WIN_WIDTH / 2 - crosshairSize, WIN_HEIGHT / 2,
           WIN_WIDTH / 2 + crosshairSize, WIN_HEIGHT / 2);
@@ -405,8 +444,6 @@ int main(int argc, char *argv[]) {
         } else {
           time++;
         }
-
-        SDL_Delay(30);
 
         SDL_RenderPresent(renderer); 
     }
